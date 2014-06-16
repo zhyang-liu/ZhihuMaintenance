@@ -215,7 +215,36 @@ class Admin:
         except Exception, e:
             print 'error occured: {}'.format(e)
 
+    def set_anonymous(self, question):
+        page = self.Session.get(question.get_address())
+        if page.status_code != 200:
+            raise Exception('Return code error: {}.'.format(page.status_code))
+        
+        soup = BS(page.content)
+        info = json.loads(soup.find('script', {'data-name': 'current_question'}).contents[0])
+        try:
+            self.send_request(zhUrl('question/set_anonymous'),
+                              Admin.get_post_header(question.get_address),
+                              [('qid', info[0])])
+        except Exception, e:
+            print 'error occured: {}'.format(e)
+        
+    def set_public(self, question):
+        page = self.Session.get(question.get_address())
+        if page.status_code != 200:
+            raise Exception('Return code error: {}.'.format(page.status_code))
+        
+        soup = BS(page.content)
+        info = json.loads(soup.find('script', {'data-name': 'current_question'}).contents[0])
+        try:
+            self.send_request(zhUrl('question/set_public'),
+                              Admin.get_post_header(question.get_address),
+                              [('qid', info[0])])
+        except Exception, e:
+            print 'error occured: {}'.format(e)
+
 me = Admin()
 
 if __name__ == '__main__':
     me.login()
+    
