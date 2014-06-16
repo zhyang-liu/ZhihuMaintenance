@@ -5,28 +5,44 @@ from urllib import urlencode
 
 import requests
 import json
+import re
 from BeautifulSoup import BeautifulSoup as BS
 
 zhUrl = lambda x: 'http://www.zhihu.com' + ("/{}".format(x.strip('/')) if x is not None else '')
+
+me = None
 
 class Question:
     """Zhihu question descriptor"""
     
     _session = None
+    _re_q = None
 
-    def __init__(self, session, link, url = None):
+    def __init__(self, link, admin=None):
+        global me
+
+        if admin is None and me is not None:
+            admin = me
+        if Question._session is None and admin is not None:
+            Question._session = admin.Session
+
         self.Title = ''
         self.Detail = ''
         self.Topics = set()
-        self.Link = link
         self.ID = ''
-        if Question._session is not None:
-            Question._session = session
-            _s = Question._session
-            rl = re.match('question/[0-9]*/answer', self.Link)
+        
+        if Question._re_q is None:
+            Question._re_q = re.compile('(question/([0-9]{8}))')
+        
+        rl = Question._re_q.search(link)
+        try:
+            self.Link = zhUrl(rl.group(1))
+            self.ID = rl.group(2)
+        except:
+            raise Exception('Question link error')
 
     def get_address(self):
-        return zhUrl('question/' + str(self.Link))
+        return self.Link
 
     def to_str(self):
         mystr = [self.Link, self.ID, self.Title]
@@ -35,10 +51,12 @@ class Question:
         return u'\t'.join(mystr)
       
     def get_answer_aid(self):
-        if _session == None:
+        if Question._session == None:
             raise Exception('Question not initialized with session')
         pass
 
+    def initial_from_content(self, content):
+        pass
 
 class Topic:
     """Zhihu topic descriptor"""
@@ -87,6 +105,8 @@ class Answer:
     def fetch_details(self):
         pass
 
+    def report(self):
+        pass
 
 class Admin:
     """ Zhihu User Actions.    """
@@ -126,7 +146,7 @@ class Admin:
         page = self.Session.get(zhUrl('#signin'))
 
         if page.status_code != 200:
-            raise Exception(page.content)
+            raise Exception('Return code error: {}.'.format(page.status_code))
 
         # fetch xsrf.
         self.xsrf = BS(page.content).find('input', {'name': '_xsrf'})['value']
@@ -138,8 +158,9 @@ class Admin:
                                   ('password', self.Password)])
 
         if page.status_code != 200:
-            raise Exception(page.content)
-        print('User: ' + self.Email + ' has logged in.')
+            print 'Login failed.'
+            raise Exception('Return code error: {}.'.format(page.status_code))
+        print 'User: ' + self.Email + ' has logged in.'
 
     def get_topic(self, link_id):
         return Topic(link_id, self.Session)
@@ -151,7 +172,7 @@ class Admin:
                                   ('question_id', question.ID),
                                   ('topic_id', topic.ID)])
         if page.status_code != 200:
-            raise Exception(page.content)
+            raise Exception('Return code error: {}.'.format(page.status_code))
 
     def append_topic_to_question(self, topic, question):
         page = self.send_request(zhUrl('topic/bind'),
@@ -162,23 +183,39 @@ class Admin:
                                   ('topic_text', topic.Name)])
 
         if page.status_code != 200:
-            raise Exception(page.content)
+            raise Exception('Return code error: {}.'.format(page.status_code))
 
     def remove_answer(self, question):
         page = self.Session.get(question.get_address())
         if page.status_code != 200:
-            raise Exception(page.content)
+            raise Exception('Return code error: {}.'.format(page.status_code))
+        
         soup = BS(page.content)
-        soup.find('script', {'data-name': 'my_answer'})
-        print(soup)
-
-        page = self.send_request(zhUrl('answer/remove'),
-                                 Admin.get_post_header(question.get_address()),
-                                 [('aid', answer.get_data_id)])
+        info = json.loads(soup.find('script', {'data-name': 'my_answer'}).contents[0])
+        try:
+            if info['is_delete'] == False:
+                self.send_request(zhUrl('answer/remove'),
+                                  Admin.get_post_header(question.get_address),
+                                  [('aid', info['id'])])
+        except Exception, e:
+            print 'error occured: {}'.format(e)            
+            
+    def unremove_answer(self, question):
+        page = self.Session.get(question.get_address())
         if page.status_code != 200:
-            raise Exception(page.content)
+            raise Exception('Return code error: {}.'.format(page.status_code))
+        
+        soup = BS(page.content)
+        info = json.loads(soup.find('script', {'data-name': 'my_answer'}).contents[0])
+        try:
+            if info['is_delete'] == True:
+                self.send_request(zhUrl('answer/unremove'),
+                                  Admin.get_post_header(question.get_address),
+                                  [('aid', info['id'])])
+        except Exception, e:
+            print 'error occured: {}'.format(e)
 
+me = Admin()
 
 if __name__ == '__main__':
-    me = Admin()
     me.login()
