@@ -3,11 +3,11 @@
 
 import json
 import re
+from urllib.parse import urlencode
 
 import requests
 from bs4 import BeautifulSoup as BS
 
-from urllib.parse import urlencode
 
 zhUrl = lambda x: 'http://www.zhihu.com' + ("/{}".format(x.strip('/')) if x is not None else '')
 
@@ -20,7 +20,7 @@ class Question:
     _session = None
     _re_q = None
 
-    def __init__(self, link, admin=None):
+    def __init__(self, link, title=None, admin=None):
         global me
 
         if admin is None and me is not None:
@@ -28,7 +28,7 @@ class Question:
         if Question._session is None and admin is not None:
             Question._session = admin.Session
 
-        self.Title = ''
+        self.Title = title
         self.Detail = ''
         self.Topics = set()
         self.ID = ''
@@ -143,7 +143,6 @@ class Topic:
         return u'\t'.join([self.Token, self.ID, self.Name])
 
 
-
 class Answer:
     """ Zhihu User Answer
     """
@@ -161,7 +160,8 @@ class Answer:
 class Admin:
     """ Zhihu User Actions.    """
 
-    UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36"
+    # UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36"
+    UserAgent = 'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)'
 
     @staticmethod
     def post_headers(refer):
@@ -171,8 +171,11 @@ class Admin:
             'User-Agent': Admin.UserAgent,
             'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'Accept': 'text/html, application/xhtml+xml, */*',
             'Accept-Encoding': 'gzip,deflate,sdch',
             'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6,zh-TW;q=0.4',
+            'Connection': 'Keep-Alive',
+
         }
         return _headers
 
@@ -184,6 +187,7 @@ class Admin:
             'Accept-Encoding': 'gzip,deflate,sdch',
             'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6,zh-TW;q=0.4',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Connection': 'Keep-Alive',
         }
         return _headers
 
@@ -202,9 +206,9 @@ class Admin:
 
     def login(self, email=None, password=None):
         if self.Email is None:
-            self.Email = email if email is not None else raw_input('Email: ')
+            self.Email = email if email is not None else input('Email: ')
         if self.Password is None:
-            self.Password = password if password is not None else raw_input('Password: ')
+            self.Password = password if password is not None else input('Password: ')
 
         page = self.Session.get(zhUrl('#signin'), headers=Admin.get_headers())
         if page.status_code != 200:
@@ -283,8 +287,7 @@ class Admin:
             print('error occured: {}'.format(e))
 
 
-me = Admin()
-
 if __name__ == '__main__':
+    me = Admin()
     me.login()
     
