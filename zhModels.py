@@ -51,7 +51,7 @@ class Question:
 
     def __getattr__(self, name):
         if name == 'AnswerID':
-            if Question._session == None:
+            if Question._session is None:
                 raise Exception('Question not initialized with session')
             page = Question._session.get(self.get_address())
             if page.status_code != 200:
@@ -70,24 +70,7 @@ class Question:
             return object.__getattr__(name)
 
     def get_answer_id(self):
-        if self.AnswerID != '':
-            return self.AnswerID
-
-        if Question._session == None:
-            raise Exception('Question not initialized with session')
-        page = Question._session.get(self.get_address())
-        if page.status_code != 200:
-            raise Exception('Return code error: {}.'.format(page.status_code))
-
-        soup = BS(page.content)
-        info = json.loads(soup.find('script', {'data-name': 'my_answer'}).contents[0])
-
-        try:
-            self.AnswerID = info['id']
-        except Exception as e:
-            print('error occured: {}'.format(e))
-
-        return self.AnswerID
+        return self.__getattr__('AnswerID')
 
     def initial_from_content(self, content):
         pass
@@ -140,7 +123,7 @@ class Topic:
         return self.get_addr() + '/questions'
 
     def to_str(self):
-        return u'\t'.join([self.Token, self.ID, self.Name])
+        return '\t'.join([self.Token, self.ID, self.Name])
 
 
 class Answer:
@@ -160,8 +143,8 @@ class Answer:
 class Admin:
     """ Zhihu User Actions.    """
 
-    # UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36"
-    UserAgent = 'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)'
+    UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36"
+    # UserAgent = 'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)'
 
     @staticmethod
     def post_headers(refer):
@@ -171,11 +154,10 @@ class Admin:
             'User-Agent': Admin.UserAgent,
             'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Accept': 'text/html, application/xhtml+xml, */*',
+            'Accept': '*/*',
             'Accept-Encoding': 'gzip,deflate,sdch',
             'Accept-Language': 'zh-CN,zh;q=0.8,en;q=0.6,zh-TW;q=0.4',
-            'Connection': 'Keep-Alive',
-
+            # 'Connection': 'Keep-Alive',
         }
         return _headers
 
