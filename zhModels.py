@@ -209,9 +209,12 @@ class Admin:
                                  data=urlencode(data_))
 
         if page.status_code != 200:
-            print('Login failed.')
-            raise Exception('Return code error: {}.'.format(page.status_code))
-        print('User: ' + self.Email + ' has logged in.')
+            print('Login failed. Return code: %s' % page.status_code)
+
+        if BS(page.text).find('form', class_='login') is not None:
+            print('Login failed, please verify captcha.')
+        else:
+            print('User: ' + self.Email + ' has logged in.')
 
     def get_topic(self, link_id):
         return Topic(link_id, self.Session)
