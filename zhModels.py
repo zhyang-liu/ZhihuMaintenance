@@ -14,6 +14,12 @@ zhUrl = lambda x: 'http://www.zhihu.com' + ("/{}".format(x.strip('/')) if x is n
 me = None
 
 
+class ZhServerException(BaseException):
+    def __init__(self, status_code, msg=''):
+        self.status_code = status_code
+        self.message = msg
+
+
 class Question:
     """Zhihu question descriptor"""
 
@@ -173,24 +179,69 @@ class Admin:
         }
         return _headers
 
-
-    def post(self, cmd_url, data_, headers=None):
-        if headers is None:
-            headers = Admin.post_headers(zhUrl('/'))
-        data_.append(('_xsrf', self.xsrf))
-        return self.Session.post(cmd_url, headers=headers, data=urlencode(data_))
-
-    def __init__(self, email=None, password=None):
+    def __init__(self, email='', password=''):
         self.Email = email
         self.Password = password
-        self.Session = requests.Session()
+
+        self.Session = None
         self.xsrf = ''
+        self.Hash = ''
+        self.Token = ''
+
+    def post(self, cmd_url, data, headers=None, **kwargs):
+        if headers is None:
+            headers = Admin.post_headers(cmd_url)
+        data.append(('_xsrf', self.xsrf))
+        return self.Session.post(cmd_url, data=urlencode(data), headers=headers, **kwargs)
+
+    def get(self, url, headers=None, **kwargs):
+        if headers is None:
+            headers = Admin.get_headers(url)
+        page = self.Session.get(url, headers=headers, **kwargs)
+        if page.status_code != 200:
+            raise Exception('Return code error: {}.'.format(page.status_code))
+        else:
+            return page
+
+
+    def initialSessionFromCookie(self, chrome_cookie_string):
+        cookies_str = str(chrome_cookie_string)
+        if self.Session is None:
+            self.Session = requests.Session()
+        cookies_list = list(cookies_str.split(';'))
+        cookies_dict = dict()
+        for cookie in cookies_list:
+            kv = cookie.split('=')
+            k = kv[0].strip(' ')
+            # to simplify cookies, uncomment following 2 lines.
+            # if re.match('__utm', k):
+            # continue
+            cookies_dict[kv[0].strip(' ')] = ('='.join(kv[1:])).strip(' ')
+
+        for k in cookies_dict:
+            print(k)
+
+        from requests.cookies import cookiejar_from_dict
+
+        self.Session.cookies = cookiejar_from_dict(cookies_dict)
+        self.xsrf = cookies_dict['_xsrf']
+
+
+    def initialSession(self, session):
+        if isinstance(session, requests.Session):
+            cookies = dict(session.cookies)
+            if '_xsrf' in cookies.keys():
+                self.xsrf = cookies['_xsrf']
+                self.Session = session
+
 
     def login(self, email=None, password=None):
         if self.Email is None:
             self.Email = email if email is not None else input('Email: ')
         if self.Password is None:
             self.Password = password if password is not None else input('Password: ')
+        if self.Session is None:
+            self.Session = requests.Session()
 
         page = self.Session.get(zhUrl('#signin'), headers=Admin.get_headers())
         if page.status_code != 200:
@@ -216,10 +267,10 @@ class Admin:
         else:
             print('User: ' + self.Email + ' has logged in.')
 
-    def get_topic(self, link_id):
+    def getTopic(self, link_id):
         return Topic(link_id, self.Session)
 
-    def remove_topic_from_question(self, topic, question):
+    def removeTopicFromQuestion(self, topic, question):
         page = self.post(zhUrl('topic/unbind'),
                          [('qid', question.ID),
                           ('question_id', question.ID),
@@ -228,7 +279,7 @@ class Admin:
         if page.status_code != 200:
             raise Exception('Return code error: {}.'.format(page.status_code))
 
-    def append_topic_to_question(self, topic, question):
+    def appendTopicToQuestion(self, topic, question):
         page = self.post(zhUrl('topic/bind'),
                          [('qid', question.ID),
                           ('question_id', question.ID),
@@ -239,15 +290,15 @@ class Admin:
         if page.status_code != 200:
             raise Exception('Return code error: {}.'.format(page.status_code))
 
-    def remove_answer(self, question):
+    def removeAnswer(self, question):
         self.post(zhUrl('answer/remove'), [('aid', question.get_answer_id())],
                   Admin.post_headers(question.get_address()))
 
-    def unremove_answer(self, question):
+    def unremoveAnswer(self, question):
         self.post(zhUrl('answer/unremove'), [('aid', question.get_answer_id())],
                   Admin.post_headers(question.get_address()))
 
-    def set_anonymous(self, question):
+    def setAnonymous(self, question):
         page = self.Session.get(question.get_address())
         if page.status_code != 200:
             raise Exception('Return code error: {}.'.format(page.status_code))
@@ -259,7 +310,7 @@ class Admin:
         except Exception as e:
             print('error occured: {}'.format(e))
 
-    def set_public(self, question):
+    def setPublic(self, question):
         page = self.Session.get(question.get_address())
         if page.status_code != 200:
             raise Exception('Return code error: {}.'.format(page.status_code))
@@ -270,6 +321,29 @@ class Admin:
             self.post(zhUrl('question/set_public'), [('qid', info[0])], Admin.post_headers(question.get_address))
         except Exception as e:
             print('error occured: {}'.format(e))
+
+
+    def clone(self, another_token):
+        followees = zhUrl('people/' + another_token.strip('/ ') + '/followees')
+
+        page = self.get(followees)
+        soup = BS(page.content)
+        c_p = soup.find('script', {'data-name': 'current_people'})
+        c_p_l = list(json.loads(c_p.text))
+        another_hash = c_p_l[-1]
+
+        print(followees, another_hash)
+
+        n = 0
+        followees = 'http://www.zhihu.com/node/ProfileFolloweesListV2'
+        method = 'next'
+        params = {'offset': n, "order_by": "created", "hash_id": another_hash}
+        page = self.post(followees, data=[('method', method), ('params', json.dumps(params))])
+        resp = json.loads(page.text)
+        if resp['r'] == 0:
+            pass
+
+        columns = zhUrl('people/' + another_token.strip('/ ') + '/columns/followed')
 
 
 if __name__ == '__main__':
