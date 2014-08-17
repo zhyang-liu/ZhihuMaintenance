@@ -14,7 +14,11 @@ zhUrl = lambda x: 'http://www.zhihu.com' + ("/{}".format(x.strip('/')) if x is n
 me = None
 
 
-class ZhServerException(BaseException):
+class ZhModelException(Exception):
+    pass
+
+
+class ZhServerException(ZhModelException):
     def __init__(self, status_code, msg=''):
         self.status_code = status_code
         self.message = msg
@@ -191,7 +195,11 @@ class Admin:
     def post(self, cmd_url, data, headers=None, **kwargs):
         if headers is None:
             headers = Admin.post_headers(cmd_url)
-        data.append(('_xsrf', self.xsrf))
+        if isinstance(data, dict):
+            if '_xsrf' not in data.keys():
+                data['_xsrf'] = self.xsrf
+        elif isinstance(data, list):
+            data.append(('_xsrf', self.xsrf))
         return self.Session.post(cmd_url, data=urlencode(data), headers=headers, **kwargs)
 
     def get(self, url, headers=None, **kwargs):
@@ -212,14 +220,11 @@ class Admin:
         cookies_dict = dict()
         for cookie in cookies_list:
             kv = cookie.split('=')
-            k = kv[0].strip(' ')
+            # k = kv[0].strip(' ')
             # to simplify cookies, uncomment following 2 lines.
             # if re.match('__utm', k):
             # continue
             cookies_dict[kv[0].strip(' ')] = ('='.join(kv[1:])).strip(' ')
-
-        for k in cookies_dict:
-            print(k)
 
         from requests.cookies import cookiejar_from_dict
 
@@ -323,27 +328,99 @@ class Admin:
             print('error occured: {}'.format(e))
 
 
-    def clone(self, another_token):
-        followees = zhUrl('people/' + another_token.strip('/ ') + '/followees')
-
+    def fetchMemberSoup(self, people_token):
+        followees = zhUrl('people/' + people_token.strip('/ ') + '/followees')
         page = self.get(followees)
-        soup = BS(page.content)
+        return BS(page.content)
+
+    @staticmethod
+    def findMemberHashIdFromSoup(people_soup):
+        if not isinstance(people_soup, BS):
+            raise ZhModelException('Parameter "people_soup" should be an instance of BeautifulSoup')
+        soup = people_soup
         c_p = soup.find('script', {'data-name': 'current_people'})
         c_p_l = list(json.loads(c_p.text))
-        another_hash = c_p_l[-1]
+        if len(c_p_l) == 0:
+            raise ZhModelException('Unexpected people info')
+        return c_p_l[-1]
 
-        print(followees, another_hash)
+    def fetchMemberHashId(self, people_token):
+        return self.findMemberHashIdFromSoup(self.fetchMemberSoup(people_token))
 
-        n = 0
-        followees = 'http://www.zhihu.com/node/ProfileFolloweesListV2'
-        method = 'next'
-        params = {'offset': n, "order_by": "created", "hash_id": another_hash}
-        page = self.post(followees, data=[('method', method), ('params', json.dumps(params))])
-        resp = json.loads(page.text)
-        if resp['r'] == 0:
-            pass
+    def memberFollowBase(self, hash_id, command):
+        COMMAND_URL = 'http://www.zhihu.com/node/MemberFollowBaseV2'
+        command = str(command).lower()
+        if command not in ['follow_member', 'unfollow_member']:
+            raise ZhModelException('Unknown follow command.')
 
-        columns = zhUrl('people/' + another_token.strip('/ ') + '/columns/followed')
+        data = {'method': command, 'params': json.dumps({"hash_id": hash_id}), '_xsrf': self.xsrf}
+        self.post(COMMAND_URL, data=data)
+
+    def followByHashId(self, people_hash_id):
+        self.memberFollowBase(people_hash_id, 'follow_member')
+
+    def unfollowByHashId(self, people_hash_id):
+        self.memberFollowBase(people_hash_id, 'unfollow_member')
+
+    def follow(self, people_token):
+        self.followByHashId(self.fetchMemberHashId(people_token))
+
+    def unfollow(self, people_token):
+        self.unfollowByHashId(self.fetchMemberHashId(people_token))
+
+    def followColumn(self, column_id):
+        COMMAND_URL = 'http://www.zhihu.com/node/ColumnFollowBaseV2'
+        data = {'method': 'follow_column', 'params': json.dumps({'column_id': str(column_id)})}
+        self.post(COMMAND_URL, data)
+
+    def checkLogin(self):
+        page = self.get(zhUrl(''))
+        soup = BS(page.content)
+        __me = soup.find('script', {'data-name': 'current_user'})
+        print(__me.text)
+
+    def clone(self, another_token):
+        another_soup = self.fetchMemberSoup(another_token)
+        another_hash = self.findMemberHashIdFromSoup(another_soup)
+
+        current_col_num = 0
+        COLUMN_LIST_URL = 'http://www.zhihu.com/node/ProfileFollowedColumnsListV2'
+        while True:
+            params = {"offset": current_col_num, "limit": 20, "hash_id": another_hash}
+            page = self.post(COLUMN_LIST_URL, data={'method': 'next', 'params': json.dumps(params)})
+            if page.status_code != 200:
+                break
+            resp = json.loads(page.text)
+            if resp['r'] == 0:
+                if len(resp['msg']) != 0:
+                    for column in resp['msg']:
+                        soup = BS(column)
+                        # button data-follow="c:button"
+                        c_id_str = str(soup.find('button', {'data-follow': 'c:button'})['id'])
+                        c_id = c_id_str.split('-')[-1]
+                        self.followColumn(c_id)
+
+                else:
+                    break
+            current_col_num += len(resp['msg'])
+
+        proceeded_num = 0
+        FOLLOWEE_LIST_URL = 'http://www.zhihu.com/node/ProfileFolloweesListV2'
+        while True:
+            params = {'offset': proceeded_num, "order_by": "created", "hash_id": another_hash}
+            page = self.post(FOLLOWEE_LIST_URL, data=[('method', 'next'), ('params', json.dumps(params))])
+            if page.status_code != 200:
+                break
+            resp = json.loads(page.text)
+            if resp['r'] == 0:
+                if len(resp['msg']) != 0:
+                    for people in resp['msg']:
+                        soup = BS(people)
+                        hash_ = soup.find('button', {'data-follow': 'm:button'})['data-id']
+                        self.followByHashId(hash_)
+                else:
+                    break
+            proceeded_num += len(resp['msg'])
 
 
 if __name__ == '__main__':
