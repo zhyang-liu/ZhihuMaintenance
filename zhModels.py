@@ -379,7 +379,7 @@ class Admin:
         __me = soup.find('script', {'data-name': 'current_user'})
         print(__me.text)
 
-    def clone(self, another_token):
+    def fork(self, another_token):
         another_soup = self.fetchMemberSoup(another_token)
         another_hash = self.findMemberHashIdFromSoup(another_soup)
 
@@ -389,7 +389,7 @@ class Admin:
             params = {"offset": current_col_num, "limit": 20, "hash_id": another_hash}
             page = self.post(COLUMN_LIST_URL, data={'method': 'next', 'params': json.dumps(params)})
             if page.status_code != 200:
-                break
+                continue
             resp = json.loads(page.text)
             if resp['r'] == 0:
                 if len(resp['msg']) != 0:
@@ -410,7 +410,7 @@ class Admin:
             params = {'offset': proceeded_num, "order_by": "created", "hash_id": another_hash}
             page = self.post(FOLLOWEE_LIST_URL, data=[('method', 'next'), ('params', json.dumps(params))])
             if page.status_code != 200:
-                break
+                continue
             resp = json.loads(page.text)
             if resp['r'] == 0:
                 if len(resp['msg']) != 0:
