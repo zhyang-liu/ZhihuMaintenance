@@ -272,8 +272,8 @@ class Admin:
         else:
             print('User: ' + self.Email + ' has logged in.')
 
-    def getTopic(self, link_id):
-        return Topic(link_id, self.Session)
+    def getTopic(self, link):
+        return Topic(link, self.Session)
 
     def removeTopicFromQuestion(self, topic, question):
         page = self.post(zhUrl('topic/unbind'),
@@ -368,7 +368,7 @@ class Admin:
     def unfollow(self, people_token):
         self.unfollowByHashId(self.fetchMemberHashId(people_token))
 
-    def followColumn(self, column_id):
+    def followColumnById(self, column_id):
         COMMAND_URL = 'http://www.zhihu.com/node/ColumnFollowBaseV2'
         data = {'method': 'follow_column', 'params': json.dumps({'column_id': str(column_id)})}
         self.post(COMMAND_URL, data)
@@ -398,7 +398,7 @@ class Admin:
                         # button data-follow="c:button"
                         c_id_str = str(soup.find('button', {'data-follow': 'c:button'})['id'])
                         c_id = c_id_str.split('-')[-1]
-                        self.followColumn(c_id)
+                        self.followColumnById(c_id)
 
                 else:
                     break
